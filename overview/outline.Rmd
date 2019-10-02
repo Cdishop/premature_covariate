@@ -1,0 +1,268 @@
+---
+title: "Outline"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = F, message = F)
+```
+
+## Executive Summary
+
+* You think an event causes a change in a response variable (e.g., a poor exchange with a colleague lowers your affect; Affective Events Theory). 
+* You run an ESM study, measure whether or not employees interact with a colleague (IV) and affect (DV) every workday, and find a significant relationship between the event and affect.
+* Unfortunately, that coefficient is biased when there is some non-zero probability of reverse causality and your measurement occasions do not perfectly align with the data generating process.
+* We propose a solution. It takes a sampling scheme paired with a statistical technique to mitigate this bias: random interval measurements and continuous time SEM (and potentially imputation).
+
+## Project Steps
+
+### 1) Make sure the premature covariate problem holds in a longitudinal analysis
+
+My post used a DGP that was longitudinal, but the analysis was a simple regression with the time 2 DV regressed on the time 1 DV and covariate. We should update the simulation to make sure we also get a biased coefficient from a longitudinal application.
+
+For example, in the original post the DGP created something like...
+
+```{r, echo = F}
+
+library(xtable)
+library(knitr)
+library(kableExtra)
+library(tidyverse)
+
+dgp <- data.frame(
+  'id' = c(1,1,1,1,2,2,2,2,3,3,3,3),
+  'time' = c(1,2,3,4,1,2,3,4,1,2,3,4),
+  'outcome' = c(40,60,30,40,7,8,5,4,21,61,11,31),
+  'event' = c(0, 1, 1, 1, 0, 0, 0, 0, 0, 1, 1, 0)
+)
+
+dgp %>%
+  kable('latex', booktabs = T, escape = F, align = 'l', caption = "True Data Generating Process") %>%
+    kable_styling(latex_options = "HOLD_position")
+
+```
+
+where, for example, participant 1 had true values on the outcome of 40, 60, 30, and 40, and a true sequence of interacting with a colleague (1 = 'yes', 2 = 'no') as 0, 1, 1, 1. That is the true system, how the variables actually played out in the participants. 
+
+The researcher had natural resource constraints, so she could only observe her participants twice: once on Monday at 10am and again on Tuesday at 3pm. Let's say that her observations corresponded to times 1 and 4 in the true DGP. Given her sampling scheme, her observed data that she eventually analyzes looks like this...
+
+
+```{r, echo = F}
+
+observed_data <- data.frame(
+  'id' = c(1,2,3),
+  'pre.outcome' = c(40,7,21),
+  'post.outcome' = c(40,4,31),
+  'event' = c(1, 0, 1)
+)
+
+observed_data %>%
+  kable('latex', booktabs = T, escape = F, align = 'l', caption = "Observed Data") %>%
+    kable_styling(latex_options = "HOLD_position")
+
+
+
+```
+
+which is tricky when you first look at it. Two things happened, she only sampled a limited portion of the DGP and the data set changed to wide. Our mock researcher only sampled times 1 and 4 of the true DGP. For instance, participant 1 had a true score of 40 on the outcome at time 1 and a true score of 40 on the outcome at time 4 -- the researcher codes those instances as "pre" and "post" or "time 1" and "time 2." That participant had 3 events happen, but the measure is retrospective and is only asked at time 4, so it gets coded simply as 1, meaning that "yes" the participant interacted with a colleague. Participant 2 had true scores of 7 and 4 at times 1 and 4 respectively in the DGP, and he or she had no instances of the event. 
+
+The analysis then takes the form:
+
+```{r, eval = F}
+
+'
+
+post_outcome ~ pre_outcome + event
+
+'
+
+```
+
+Do you see how technically that isn't a longitudinal analysis? What we need to do is, if you will, "stack" the simulation a couple of times so that the DGP is really long and the researcher collects a longitudinal data and then runs a model such as:
+
+```{r, eval = F}
+'
+
+post_outcome.2 ~ b1*pre_outcome.1 + b2*event.1
+post_outcome.3 ~ b1*pre_outcome.2 + b2*event.2
+post_outcome.4 ~ b1*pre_outcome.3 + b2*event.3
+...
+
+'
+```
+
+where the coefficient we're hoping to find that's biased is b2. In this model, she calls her time points 1, 2, 3, and 4, but just like what I showed above we'll want that to correspond to something like times 5, 10, 15, and 20 in the true DGP. 
+
+Also note that with this approach we are sticking close to what Particia describes in her chapter. We could also ignore this "event" set up and just simulate a system with two continuous variables where the researcher gets the direction of effects wrong as so:
+
+```{r, eval = F}
+# DGP - satisfaction is a function of performance
+'
+satisfaction(t) = performance(t - 1)
+
+'
+
+
+# Researcher's Model - performance is a function of satisfaction
+
+'
+
+performance(t) = performance(t - 1) + satisfaction(t - 1)
+
+'
+```
+
+I believe this set up would also work. Happy with either. 
+
+### 2) Figure out continous time SEM
+
+* Learn how to estimate models using CSTEM
+* Learn how to generate a DGP using CSTEM
+* If we can't generate a DGP in the way that we want using CSTEM, then figure out how to generate a DGP using something like my post in discrete time and then translate that into a continuous time system.
+
+### 3) Simulation
+
+* Generate a DGP with the outcome causing the event and the outcome fluctuating indepedently across time
+* Sample the DGP according to some sampling scheme (multiple conditions here)
+* Run models to estimate the b2 coefficient
+
+#### Condition 1
+
+DGP
+
+```{r, eval = F}
+'
+outcome(t) = change_in_outcome + outcome(t-1)
+event(t) = outcome(t)
+
+...up through 100 time points
+
+'
+```
+
+Sampling scheme
+
+* Researcher observes times 10, 20, 30, 40, 50, etc...
+* She calls time 10 "pre_outcome.1"
+* She calls time 20 "post_outcome.1" and "event.1"
+* She calls time 30 "pre_outcome.2"
+* She calls time 40 "post_outcome.2" and "event.2"
+* She calls time 50 "pre_outcome.3"
+* ...
+
+Continuous time Model
+
+```{r, eval = F}
+'
+
+post_outcome.1 ~ pre_outcome.1 + event.1
+post_outcome.2 ~ pre_outcome.2 + event.2
+post_outcome.3 ~ pre_outcome.3 + event.3
+
+etc...
+
+'
+```
+
+Result
+
+* Large bias in b2 coefficient
+
+
+#### Condition 2
+
+DGP (same as condition 1)
+
+```{r, eval = F}
+'
+outcome(t) = change_in_outcome + outcome(t-1)
+event(t) = outcome(t)
+
+...up through 100 time points
+
+'
+```
+
+Sampling scheme
+
+* Researcher observes times 5, 10, 15, 20, 25, etc...
+* She calls time 5 "pre_outcome.1"
+* She calls time 10 "post_outcome.1" and "event.1"
+* She calls time 15 "pre_outcome.2"
+* She calls time 20 "post_outcome.2" and "event.2"
+* She calls time 25 "pre_outcome.3"
+* ...
+
+Continuous time Model
+
+```{r, eval = F}
+'
+
+post_outcome.1 ~ pre_outcome.1 + event.1
+post_outcome.2 ~ pre_outcome.2 + event.2
+post_outcome.3 ~ pre_outcome.3 + event.3
+
+etc...
+
+'
+```
+
+Result
+
+* Smaller than condition 1, but still a bias in b2 coefficient
+
+#### Condition 3
+
+Now implement a random sampling scheme.
+
+DGP
+
+```{r, eval = F}
+'
+outcome(t) = change_in_outcome + outcome(t-1)
+event(t) = outcome(t)
+
+...up through 100 time points
+
+'
+```
+
+Sampling scheme
+
+* Researcher observes random DGP times for each participant
+
+    + for participant 1, she observes times 2, 3, 4, 14, 40, etc...
+    + She calls time 1 "pre_outcome.1"
+    + She calls time 2 "post_outcome.1" and "event.1"
+    + She calls time 3 "pre_outcome.2"
+    + She calls time 14 "post_outcome.2" and "event.2"
+    + She calls time 40 "pre_outcome.3"
+    + ...
+    
+    + for participant 2, she observes times 20, 25, 76, 80, 82, etc...
+    + She calls time 20 "pre_outcome.1"
+    + She calls time 25 "post_outcome.1" and "event.1"
+    + She calls time 76 "pre_outcome.2"
+    + She calls time 80 "post_outcome.2" and "event.2"
+    + She calls time 82 "pre_outcome.3"
+    + ...
+
+Continuous time Model
+
+```{r, eval = F}
+'
+
+post_outcome.1 ~ pre_outcome.1 + event.1
+post_outcome.2 ~ pre_outcome.2 + event.2
+post_outcome.3 ~ pre_outcome.3 + event.3
+
+etc...
+
+'
+```
+
+Result
+
+* Small bias in b2 coefficient
